@@ -47,6 +47,10 @@ uint16_t CDB_Read(uint32_t offset) MDFN_HOT;
 
 void CDB_Reset(bool powering_up) MDFN_COLD;
 
+/* The SMPC's CDRES line: low (CDOFF) holds the CD block in reset, high (CDON)
+ * lets it start. */
+void CDB_SetCDRES(bool high) MDFN_COLD;
+
 /* int32_t in place of sscpu_timestamp_t (typedef'd to int32_t in
  * ss.h) -- keeps the header self-contained for C consumers and
  * matches the C-ABI convention used by vdp1.c / sound.h / smpc.h /

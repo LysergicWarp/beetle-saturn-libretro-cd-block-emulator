@@ -1277,10 +1277,12 @@ sscpu_timestamp_t SMPC_Update(sscpu_timestamp_t timestamp)
     else if(ExecutingCommand == CMD_CDON)
     {
      CDOn = true;
+     CDB_SetCDRES(true);
     }
     else if(ExecutingCommand == CMD_CDOFF)
     {
      CDOn = false;
+     CDB_SetCDRES(false);
     }
     else if(ExecutingCommand == CMD_SYSRES)
     {

@@ -467,6 +467,9 @@ CFLAGS   += $(FLAGS)
 
 ifeq (,$(findstring msvc,$(platform)))
     CXXFLAGS += -std=c++11
+    ifeq ($(HAVE_CDB_LLE), 1)
+        CXXFLAGS += -std=c++20
+    endif
     CFLAGS   += -MMD -MP
     CXXFLAGS += -MMD -MP
 endif

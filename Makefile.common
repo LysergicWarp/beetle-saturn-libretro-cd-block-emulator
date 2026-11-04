@@ -189,3 +189,13 @@ ifneq ($(STATIC_LINKING), 1)
 SOURCES_C +=	 $(LIBRETRO_COMM_DIR)/vfs/vfs_hybrid.c \
 		 $(LIBRETRO_COMM_DIR)/file/file_path_io.c
 endif
+
+# The CD block run by the CD-block emulator library (C++20) when the
+# CD-block ROM is in the system directory. HAVE_CDB_LLE=1 builds it,
+# CDBLOCK_DIR points at the library's checkout.
+ifeq ($(HAVE_CDB_LLE), 1)
+CDBLOCK_DIR ?= $(CORE_DIR)/deps/cd-block-sh1-emulator
+FLAGS += -DHAVE_CDB_LLE -I$(CDBLOCK_DIR)/include
+SOURCES_C += $(CORE_EMU_DIR)/cdb_lle.c
+SOURCES_CXX += $(wildcard $(CDBLOCK_DIR)/src/*.cpp $(CDBLOCK_DIR)/src/*/*.cpp)
+endif

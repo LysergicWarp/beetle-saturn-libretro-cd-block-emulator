@@ -147,6 +147,10 @@
 #include "../cdrom/CDUtility.h"
 #include "../cdrom/cdromif.h"
 
+#ifdef HAVE_CDB_LLE
+#include "cdb_lle.h"
+#endif
+
 extern retro_log_printf_t log_cb;
 
 static void CheckBufPauseResume(void);
@@ -1237,6 +1241,9 @@ static void DT_ReadIntoFIFO(void)
 void CDB_SetClockRatio(uint32_t ratio)
 {
  CDB_ClockRatio = ratio;
+#ifdef HAVE_CDB_LLE
+ CDBLLE_SetClockRatio(ratio);
+#endif
 }
 
 static void SWReset(void)
@@ -1305,6 +1312,12 @@ void CDB_Init(void)
  Cur_CDIF = NULL;
  TrayOpen = false;
 
+#ifdef HAVE_CDB_LLE
+ // The CD-block ROM in the system directory runs the CD block instead.
+ if(CDBLLE_Init())
+  return;
+#endif
+
  //
  // Video CD Card (MPEG card).  It is not a cartridge -- it plugs into
  // the dedicated MPEG expansion connector and is driven entirely
@@ -1335,11 +1348,29 @@ void CDB_Init(void)
 
 void CDB_Kill(void)
 {
+#ifdef HAVE_CDB_LLE
+ CDBLLE_Kill();
+#endif
  MPEG_Kill();
+}
+
+void CDB_SetCDRES(bool high)
+{
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)
+  CDBLLE_SetResetLine(!high);
+#endif
+ // TODO: the high-level CD block ignores the line.
+ (void)high;
 }
 
 void CDB_SetDisc(bool tray_open, CDIF* cdif)
 {
+#ifdef HAVE_CDB_LLE
+ CDBLLE_SetDisc(tray_open, cdif);
+ if(CDBLLE_Active)
+  return;
+#endif
  TrayOpen = tray_open;
  Cur_CDIF = tray_open ? NULL : cdif;
 
@@ -1363,6 +1394,13 @@ static INLINE void RecalcIRQOut(void)
 
 void CDB_Reset(bool powering_up)
 {
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)
+ {
+  CDBLLE_Reset(powering_up);
+  return;
+ }
+#endif
  MPEG_Reset(powering_up);
 
  if(powering_up)
@@ -1499,6 +1537,10 @@ enum { CommandPhaseBias = __COUNTER__ + 1 };
 
 uint8_t GetDriveStatus(void)
 {
+#ifdef HAVE_CDB_LLE
+   if(CDBLLE_Active)
+      return STATUS_PAUSE;	// the board's drive status is not read, so the LED stays off
+#endif
    return CurPosInfo.status;
 }
 
@@ -2425,6 +2467,11 @@ void CDB_GetCDDA(uint16_t* outbuf)
 {
  outbuf[0] = outbuf[1] = 0;
 
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)	// no CD audio from the board yet
+  return;
+#endif
+
  // The MPEG card's audio reaches the SCSP through the same external
  // input CD-DA does -- there is one analogue path off the CD block, not
  // two -- so decoded MPEG audio substitutes for the CD-DA sample rather
@@ -2462,6 +2509,10 @@ static void ClearPendingSec(void)
 
 sscpu_timestamp_t CDB_Update(sscpu_timestamp_t timestamp)
 {
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)
+  return CDBLLE_Update(timestamp);
+#endif
  if(MDFN_UNLIKELY(timestamp < lastts)) { }
  else
  {
@@ -4071,11 +4122,19 @@ sscpu_timestamp_t CDB_Update(sscpu_timestamp_t timestamp)
 void CDB_ResetTS(void)
 {
  lastts = 0;
+#ifdef HAVE_CDB_LLE
+ CDBLLE_ResetTS();
+#endif
 }
 
 uint16_t CDB_Read(uint32_t offset)
 {
  uint16_t ret = 0; //0xFFFF;
+
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)
+  return CDBLLE_Read(offset);
+#endif
 
  switch(offset)
  {
@@ -4111,6 +4170,13 @@ uint16_t CDB_Read(uint32_t offset)
 
 void CDB_Write_DBM(uint32_t offset, uint16_t DB, uint16_t mask)
 {
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)
+ {
+  CDBLLE_Write(offset, DB, mask);
+  return;
+ }
+#endif
  sscpu_timestamp_t nt = CDB_Update(SH7095_mem_timestamp);
 
  switch(offset)
@@ -4187,6 +4253,10 @@ void CDB_Write_DBM(uint32_t offset, uint16_t DB, uint16_t mask)
 
 void CDB_StateAction(StateMem* sm, const unsigned load, const bool data_only)
 {
+#ifdef HAVE_CDB_LLE
+ if(CDBLLE_Active)	// the board has no save states, so the CD block is left out
+  return;
+#endif
  SFORMAT StateRegs[] =
  {
   SFVAR(GetSecLen),
