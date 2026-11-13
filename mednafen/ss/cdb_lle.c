@@ -201,7 +201,7 @@ static void RecalcIRQ(void)
 
 static void Fail(const char *what)
 {
-   Log(RETRO_LOG_ERROR, "%s: %s. The CD block stops until the next power-on", what,
+   Log(RETRO_LOG_ERROR, "%s: %s. The CD block stops until the next reset", what,
        cdblock_last_error(Board));
    Stopped = true;
    RecalcIRQ();
@@ -594,8 +594,9 @@ void CDBLLE_SetDisc(bool tray_open, CDIF *cdif)
 
 void CDBLLE_Reset(bool powering_up)
 {
-   if(!powering_up)
-      return;
+   /* SYSRES is the one reset that is not a power-on. The SMPC drives CDRES low
+    * for it as at power-on and releases it, which also ends a CDOFF hold. */
+   (void)powering_up;
    Held = false;
    ResetBoard();
 }

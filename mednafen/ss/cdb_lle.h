@@ -44,7 +44,8 @@ void CDBLLE_Kill(void);
  * CDBLLE_Init reaches the drive. */
 void CDBLLE_SetDisc(bool tray_open, CDIF *cdif);
 
-/* Power-on only: SYSRES leaves CDRES alone, so the CD block runs on. */
+/* Power-on and SYSRES: the SMPC pulses CDRES for both, so the board restarts
+ * and CDRES ends released. */
 void CDBLLE_Reset(bool powering_up);
 /* The SMPC's CDRES: asserted (CDOFF) resets the board and holds it there,
  * released (CDON) lets it start. */
