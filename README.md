@@ -3,10 +3,27 @@
 This is fork of Mednafen Saturn. It has been ported to the libretro API.
 It currently runs on Linux, OSX and possibly Windows.
 
+## CD-block emulator
+
+This fork can run the Saturn's CD block from its own firmware, in place of the core's high-level CD block.
+The CD block's SH-1 board is run by the [CD-block emulator](https://github.com/LysergicWarp/Sega-Saturn-CDB-Emulator), a submodule in <tt>deps/cd-block-sh1-emulator</tt>.
+
+Clone with the submodule and build with <tt>HAVE_CDB_LLE=1</tt>. This needs a C++20 compiler.
+
+    git clone --recurse-submodules https://github.com/LysergicWarp/beetle-saturn-libretro-cd-block-emulator
+    make HAVE_CDB_LLE=1
+
+The core uses it when the CD-block ROM is in the system directory, and its high-level CD block otherwise.
+With the Video CD Card option enabled, the CD block's firmware loads and runs the card ROM.
+In this mode there is no CD audio, a changed disc is read as the old one, and the CD block is left out of save states.
+
+The [CD-block SH-1 demo](https://github.com/LysergicWarp/Sega-Saturn-CDblock-SH1-Demo) runs SH-1 code of its own in the CD block this way.
+
 ## Running
 
 To run this core, the "system directory" must be defined if running in RetroArch.
 The Saturn BIOS must be placed there, $sysdir/{sega_101,mpr-17933}.bin for Japanese, NA and EU regions respectively.
+The CD-block emulator needs the CD-block ROM there too, $sysdir/cdblock.bin, and the card ROM as $sysdir/mpeg_card.bin when the card is enabled.
 
 ## Loading ISOs
 
@@ -37,6 +54,7 @@ Save as foo.m3u and use this file in place of each disk's individual cue sheet.
 - mpr-17933.bin (3240872c70984b6cbfda1586cab68dbe)
 - mpr-18811-mx.ic1 (255113ba943c92a54facd25a10fd780c)
 - mpr-19367-mx.ic1 (1cd19988d1d72a3e7caa0b73234c96b4)
+- cdblock.bin (21cc63ac18d7a85420c24de5c7d51321), the CD-block ROM, revision CDB105, for the CD-block emulator
 
 ## Options
 
