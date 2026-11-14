@@ -32,8 +32,18 @@
  * from the host time after it. Beetle's buses cannot hold an access, so a data
  * port access the FIFO cannot serve runs the board ahead until it can.
  *
- * Not modelled: CD audio (silent), disc changes (the drive reads the new disc
- * as the old one's), save states (the CD block is left out of them).
+ * Disc: the drive reads the sectors and the subcode of the core's disc, so
+ * its position reports carry the image's Q. The core's tray is the drive's,
+ * and a disc changes while it is open. The console's lid opens by hand, so a
+ * tray the firmware opens with its own drive command is closed again at once.
+ * What a real drive does with that command is unconfirmed.
+ *
+ * CD audio: the audio sectors the drive plays reach the SCSP's external input
+ * through CDB_GetCDDA. A sector read at double speed is left out, since the
+ * SCSP takes the samples at one rate.
+ *
+ * Not modelled: de-emphasis of CD audio, save states (the CD block is left
+ * out of them).
  */
 
 #include <stdarg.h>
@@ -104,8 +114,32 @@ static uint16_t CR[4]; /* CR1..CR3 as written, sent with CR4 */
 static uint16_t HIRQMask;
 static uint16_t LastData; /* the last word read from the data port */
 
-static CDIF *Disc;
-static uint32_t DiscEnd; /* the disc's last frame address, 0 without a disc */
+static CDIF *Disc;       /* the core's disc, NULL without one or with its tray open */
+static bool TrayOpen;    /* the core's tray */
+static CDIF *InDrive;    /* the disc whose tracks the drive holds, NULL for none of the core's */
+static uint32_t DiscEnd; /* the last frame address of the drive's disc, 0 without a disc */
+static bool Ran;         /* the board ran since it was made */
+
+/* The sector last read from the disc, with its subcode: the drive asks for a
+ * sector's subcode and for the sector itself. */
+#define NO_FRAME 0xFFFFFFFFu
+static uint8_t Sector[2352 + 96];
+static uint32_t SectorFrame = NO_FRAME;
+static bool SectorRead;
+
+/* CD audio: the stereo pairs of the audio sectors the drive plays, until the
+ * SCSP takes them, one each sample. The sectors come late by up to a batch,
+ * and early by what the data port ran the board ahead. The drive's sector
+ * period is also a whole count of the board's cycles, a little over 588
+ * pairs, so a play falls a pair behind every 18 seconds: 331 pairs over a disc
+ * of 100 minutes. So the sectors that find the buffer empty, a play's first,
+ * go in after AUDIO_LEAD pairs of silence, which no unbroken play uses up.
+ * The buffer holds more than three sectors, and pairs that find it full are
+ * dropped. */
+#define AUDIO_PAIRS 2048u
+#define AUDIO_LEAD 384u
+static uint16_t Audio[AUDIO_PAIRS][2];
+static uint32_t AudioAt, AudioCount; /* the next pair out, and the pairs held */
 
 static uint8_t *CardROM;
 static size_t CardROMSize;
@@ -228,6 +262,8 @@ static void ProcessLog(void)
    cdblock_clear_log(Board);
 }
 
+static void SetUpDisc(void);
+
 static void CatchUp(void)
 {
    uint64_t end, now;
@@ -242,6 +278,13 @@ static void CatchUp(void)
 
    /* One instruction is one cycle of the board's clock. A SLEEP lets the
     * clock run to its next event. */
+   if(!Ran)
+   {
+      /* A core that gave no disc has none: the disc the board is made with
+       * comes out before the firmware starts. */
+      Ran = true;
+      SetUpDisc();
+   }
    end = cdblock_clock_cycles(Board) + Owed;
    Owed = 0;
    for(now = cdblock_clock_cycles(Board); now < end; now = cdblock_clock_cycles(Board))
@@ -426,9 +469,21 @@ static void WriteRingSector(uint32_t frame, uint8_t *raw)
    memset(raw + 2348, 0, 4);
 }
 
+/* The disc's sector at the frame with its 96 subcode symbols after it, NULL
+ * for a frame the image cannot give. */
+static const uint8_t *ReadSector(uint32_t frame)
+{
+   if(frame != SectorFrame)
+   {
+      SectorRead = CDIF_ReadRawSector(Disc, Sector, (int32_t)frame - 150);
+      SectorFrame = frame;
+   }
+   return SectorRead ? Sector : NULL;
+}
+
 static int ProvideSector(void *user, uint32_t frame, uint8_t *raw)
 {
-   uint8_t sector[2352 + 96];
+   const uint8_t *sector;
 
    (void)user;
    if(!Disc || !DiscEnd)
@@ -438,24 +493,65 @@ static int ProvideSector(void *user, uint32_t frame, uint8_t *raw)
       WriteRingSector(frame, raw);
       return 0;
    }
-   /* A frame the image cannot give keeps the drive's own sector, sync and a
-    * mode 1 header. */
-   if(CDIF_ReadRawSector(Disc, sector, (int32_t)frame - 150))
+   /* A frame the image cannot give keeps the drive's own sector: sync and a
+    * mode 1 header, or silence in an audio track. */
+   sector = ReadSector(frame);
+   if(sector)
       memcpy(raw, sector, 2352);
    return 0;
 }
 
-static void SetUpDisc(void)
+/* The image's subcode, P to W in each symbol as the drive takes them. Past
+ * the disc's end, where the ring sectors are made up, the drive keeps the Q it
+ * builds itself. */
+static int ProvideSubcode(void *user, uint32_t frame, uint8_t symbols[96])
+{
+   const uint8_t *sector;
+
+   (void)user;
+   if(!Disc || !DiscEnd || frame > DiscEnd)
+      return 0;
+   sector = ReadSector(frame);
+   if(sector)
+      memcpy(symbols, sector + 2352, 96);
+   return 0;
+}
+
+static int TakeAudio(void *user, uint32_t frame, const uint8_t *raw, int speed)
+{
+   unsigned i;
+
+   (void)user;
+   (void)frame;
+   if(speed != 1)
+      return 0;
+
+   if(!AudioCount)
+   {
+      AudioAt = 0;
+      memset(Audio, 0, AUDIO_LEAD * sizeof(Audio[0]));
+      AudioCount = AUDIO_LEAD;
+   }
+   for(i = 0; i < 588 && AudioCount < AUDIO_PAIRS; i++, raw += 4)
+   {
+      uint16_t *pair = Audio[(AudioAt + AudioCount) % AUDIO_PAIRS];
+
+      pair[0] = (uint16_t)(raw[0] | (raw[1] << 8));
+      pair[1] = (uint16_t)(raw[2] | (raw[3] << 8));
+      AudioCount++;
+   }
+   return 0;
+}
+
+/* Gives the drive the tracks of the core's disc. False, with the drive's
+ * tracks as they were, when it takes none of them. */
+static bool GiveTracks(void)
 {
    static TOC toc;
    cdblock_track tracks[99];
    size_t count = 0;
    unsigned number;
    uint32_t lead_out;
-
-   DiscEnd = 0;
-   if(!Board || !Disc)
-      return;
 
    CDIF_ReadTOC(Disc, &toc);
    for(number = toc.first_track; number && number <= toc.last_track && number <= 99; number++)
@@ -471,10 +567,63 @@ static void SetUpDisc(void)
    if(cdblock_drive_disc_tracks(Board, tracks, count, lead_out) < 0)
    {
       Log(RETRO_LOG_ERROR, "the disc's tracks do not fit the drive: %s", cdblock_last_error(Board));
-      return;
+      return false;
    }
    DiscEnd = lead_out - 1;
    Log(RETRO_LOG_INFO, "disc of %u tracks, lead-out at frame %u", (unsigned)count, lead_out);
+   return true;
+}
+
+/* Brings the drive's tray and disc to the core's. A disc changes with the
+ * tray open, as the drive has it. The drive reports each opening to the
+ * firmware before it closes, so a disc the core changes in one call is seen
+ * too. */
+static void SetUpDisc(void)
+{
+   const int state = cdblock_drive_disc_state(Board);
+   const bool open = state > 0 && (state & CDBLOCK_DISC_TRAY_OPEN);
+   const bool present = state > 0 && (state & CDBLOCK_DISC_PRESENT);
+   bool done;
+
+   if(!TrayOpen && !open)
+   {
+      /* Nothing to move: the same disc again, or none on either side. */
+      if(Disc ? (present && InDrive == Disc) : !present)
+         return;
+      /* The disc the core gives before the board first runs is in the drive
+       * from the start, with no opening. Should the drive not take its
+       * tracks, it comes out as the board first runs. */
+      if(!Ran && Disc && present)
+      {
+         SectorFrame = NO_FRAME;
+         DiscEnd = 0;
+         InDrive = NULL;
+         if(GiveTracks())
+            InDrive = Disc;
+         return;
+      }
+   }
+
+   SectorFrame = NO_FRAME;
+   done = open || cdblock_drive_disc_tray(Board, 1) >= 0;
+   if(done && !TrayOpen)
+   {
+      DiscEnd = 0;
+      InDrive = NULL;
+      done = cdblock_drive_disc_present(Board, 0) >= 0;
+      /* A disc whose tracks the drive does not take stays out. */
+      if(done && Disc && GiveTracks())
+      {
+         done = cdblock_drive_disc_present(Board, 1) >= 0;
+         InDrive = Disc;
+      }
+      if(cdblock_drive_disc_tray(Board, 0) < 0)
+         done = false;
+   }
+   if(!done)
+      Log(RETRO_LOG_ERROR, "could not move the drive's tray or disc: %s", cdblock_last_error(Board));
+   else if(!TrayOpen)
+      Log(RETRO_LOG_INFO, "the tray closed %s", InDrive ? "on the disc" : "without a disc");
 }
 
 static void ResetBoard(void)
@@ -484,6 +633,7 @@ static void ResetBoard(void)
    memset(CR, 0, sizeof(CR));
    HIRQMask = 0;
    LastData = 0;
+   AudioCount = 0;
    if(!Board)
       return;
    if(cdblock_reset(Board) < 0)
@@ -539,7 +689,9 @@ bool CDBLLE_Init(void)
 
    cdblock_log_kinds(Board, 1u << CDBLOCK_LOG_VIOLATION);
    if(cdblock_drive_select_disc(Board, NULL) < 0 ||
-      cdblock_drive_disc_sector_provider(Board, ProvideSector, NULL) < 0)
+      cdblock_drive_disc_sector_provider(Board, ProvideSector, NULL) < 0 ||
+      cdblock_drive_disc_subcode_provider(Board, ProvideSubcode, NULL) < 0 ||
+      cdblock_set_audio_sink(Board, TakeAudio, NULL) < 0)
    {
       Log(RETRO_LOG_ERROR, "could not set up the disc drive: %s", cdblock_last_error(Board));
       cdblock_destroy(Board);
@@ -559,7 +711,13 @@ bool CDBLLE_Init(void)
    CDBLLE_Active = true;
    Stopped = false;
    Held = false;
-   SetUpDisc();
+   Ran = false;
+   InDrive = NULL;
+   DiscEnd = 0;
+   /* The core gives its disc after this, so until the board first runs the
+    * drive keeps the disc the board is made with. */
+   if(Disc || TrayOpen)
+      SetUpDisc();
    ResetBoard();
 
    Log(RETRO_LOG_INFO, "CD block run by the CD-block emulator library from %s%s", ROM_NAME,
@@ -579,17 +737,29 @@ void CDBLLE_Kill(void)
    CardROM = NULL;
    CardROMSize = 0;
    CDBLLE_Active = false;
+   /* The core closes its discs after this. */
+   Disc = NULL;
+   InDrive = NULL;
+   TrayOpen = false;
+   SectorFrame = NO_FRAME;
 }
 
 void CDBLLE_SetDisc(bool tray_open, CDIF *cdif)
 {
-   CDIF *next = tray_open ? NULL : cdif;
-
-   if(Board && Disc && next && next != Disc)
-      Log(RETRO_LOG_WARN, "disc change is not modelled, the drive reads the new disc as the old one's");
-   Disc = next;
+   TrayOpen = tray_open;
+   Disc = tray_open ? NULL : cdif;
    if(Board)
       SetUpDisc();
+}
+
+void CDBLLE_GetCDDA(uint16_t *outbuf)
+{
+   if(!AudioCount)
+      return;
+   outbuf[0] = Audio[AudioAt][0];
+   outbuf[1] = Audio[AudioAt][1];
+   AudioAt = (AudioAt + 1) % AUDIO_PAIRS;
+   AudioCount--;
 }
 
 void CDBLLE_Reset(bool powering_up)
@@ -615,6 +785,15 @@ int32_t CDBLLE_Update(int32_t timestamp)
 {
    Sync(timestamp);
    CatchUp();
+   if(Board && !TrayOpen)
+   {
+      /* The firmware's own drive command opened the tray, which the core has
+       * closed. */
+      const int state = cdblock_drive_disc_state(Board);
+
+      if(state > 0 && (state & CDBLOCK_DISC_TRAY_OPEN) && cdblock_drive_disc_tray(Board, 0) < 0)
+         Log(RETRO_LOG_ERROR, "could not close the drive's tray: %s", cdblock_last_error(Board));
+   }
    return timestamp + BatchSH2;
 }
 

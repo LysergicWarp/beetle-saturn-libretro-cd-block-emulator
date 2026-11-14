@@ -2468,8 +2468,11 @@ void CDB_GetCDDA(uint16_t* outbuf)
  outbuf[0] = outbuf[1] = 0;
 
 #ifdef HAVE_CDB_LLE
- if(CDBLLE_Active)	// no CD audio from the board yet
+ if(CDBLLE_Active)
+ {
+  CDBLLE_GetCDDA(outbuf);
   return;
+ }
 #endif
 
  // The MPEG card's audio reaches the SCSP through the same external

@@ -15,7 +15,7 @@ Clone with the submodule and build with <tt>HAVE_CDB_LLE=1</tt>. This needs a C+
 
 The core uses it when the CD-block ROM is in the system directory, and its high-level CD block otherwise.
 With the Video CD Card option enabled, the CD block's firmware loads and runs the card ROM.
-In this mode there is no CD audio, a changed disc is read as the old one, and the CD block is left out of save states.
+In this mode the CD block is left out of save states.
 
 The [CD-block SH-1 demo](https://github.com/LysergicWarp/Sega-Saturn-CDblock-SH1-Demo) runs SH-1 code of its own in the CD block this way.
 

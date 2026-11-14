@@ -40,9 +40,14 @@ extern bool CDBLLE_Active;
 bool CDBLLE_Init(void);
 void CDBLLE_Kill(void);
 
-/* Keeps the disc even while the board is not made, so a disc given before
- * CDBLLE_Init reaches the drive. */
+/* The core's tray and disc, which the drive follows: a disc changes with the
+ * tray open. Kept while the board is not made, so a disc given before
+ * CDBLLE_Init reaches the drive. CDBLLE_Kill forgets it. */
 void CDBLLE_SetDisc(bool tray_open, CDIF *cdif);
+
+/* The next stereo pair of the CD audio the drive plays, into outbuf[0] and
+ * outbuf[1]. Leaves them as they are when there is none. */
+void CDBLLE_GetCDDA(uint16_t *outbuf);
 
 /* Power-on and SYSRES: the SMPC pulses CDRES for both, so the board restarts
  * and CDRES ends released. */
