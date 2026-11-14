@@ -1,0 +1,3 @@
+[submodule "deps/cd-block-sh1-emulator"]
+	path = deps/cd-block-sh1-emulator
+	url = https://github.com/LysergicWarp/Sega-Saturn-CDB-Emulator.git
