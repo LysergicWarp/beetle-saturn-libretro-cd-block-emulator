@@ -28,7 +28,9 @@
  *
  * Timing: the board runs in batches of SH-1 cycles from the CD block's event,
  * and catches up before the host's accesses where an answer depends on it. A
- * word through the data port runs the board ahead by the bus's time, paid back
+ * read of the flags or a response word catches it up to the host's time, so a
+ * polling host sees each answer when the firmware gives it, as on the console.
+ * A word through the data port runs the board ahead by the bus's time, paid back
  * from the host time after it. Beetle's buses cannot hold an access, so a data
  * port access the FIFO cannot serve runs the board ahead until it can.
  *
@@ -87,10 +89,6 @@ extern retro_log_printf_t log_cb;
  * finish it while the SH-1 stands still. */
 #define DATA_WORD_CYCLES 28ULL
 #define AHEAD_STEP_CYCLES 256ULL
-
-/* SH-1 cycles the board may stay behind when the host reads the flags or a
- * response word, so a polling host does not run it a few cycles at a time. */
-#define POLL_CYCLES 512ULL
 
 /* SH-1 cycles a data port access may run the board ahead waiting for the FIFO,
  * about 13 ms, past which it reads the last word again or drops the write. */
@@ -831,8 +829,7 @@ uint16_t CDBLLE_Read(uint32_t offset)
          return value;
 
       case 0x2: /* HIRQ */
-         if(Owed >= POLL_CYCLES)
-            CatchUp();
+         CatchUp();
          return Stopped ? 0 : cdblock_host_flags(Board);
 
       case 0x3: /* HIRQ mask */
@@ -842,8 +839,7 @@ uint16_t CDBLLE_Read(uint32_t offset)
       case 0x7:
       case 0x8:
       case 0x9:
-         if(Owed >= POLL_CYCLES)
-            CatchUp();
+         CatchUp();
          if(Stopped)
             return 0;
          if(cdblock_host_response_word(Board, offset - 0x6, &value) < 0)
