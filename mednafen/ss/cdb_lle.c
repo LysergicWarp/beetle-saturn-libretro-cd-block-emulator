@@ -70,8 +70,13 @@
 
 extern retro_log_printf_t log_cb;
 
-/* The CD-block ROM's file in the system directory. */
-#define ROM_NAME "cdblock.bin"
+/* The CD-block ROM's files in the system directory, in the order tried:
+ * cdblock.bin, then the four revisions' dumps by name, newest first. */
+static const char *const RomNames[] =
+{
+   "cdblock.bin", "ygr022.bin", "cdb106.bin", "cdb105.bin", "cdb104.bin"
+};
+#define ROM_NAME_COUNT (sizeof(RomNames) / sizeof(RomNames[0]))
 #define ROM_SIZE 0x10000
 #define CARD_ROM_MAX 0x80000
 
@@ -648,15 +653,22 @@ bool CDBLLE_Init(void)
 {
    cdblock_options options;
    size_t rom_size = 0;
-   uint8_t *rom;
+   uint8_t *rom = NULL;
+   const char *rom_name = NULL;
+   unsigned i;
 
    if(Board)
       CDBLLE_Kill();
 
-   rom = ReadFirmware(ROM_NAME, ROM_SIZE, &rom_size);
+   for(i = 0; i < ROM_NAME_COUNT && !rom; i++)
+   {
+      rom_name = RomNames[i];
+      rom = ReadFirmware(rom_name, ROM_SIZE, &rom_size);
+   }
    if(!rom)
    {
-      Log(RETRO_LOG_INFO, "no %s in the system directory, the CD block stays high-level", ROM_NAME);
+      Log(RETRO_LOG_INFO, "no CD-block ROM in the system directory (cdblock.bin, ygr022.bin, "
+          "cdb106.bin, cdb105.bin or cdb104.bin), the CD block stays high-level");
       return false;
    }
 
@@ -718,7 +730,7 @@ bool CDBLLE_Init(void)
       SetUpDisc();
    ResetBoard();
 
-   Log(RETRO_LOG_INFO, "CD block run by the CD-block emulator library from %s%s", ROM_NAME,
+   Log(RETRO_LOG_INFO, "CD block run by the CD-block emulator library from %s%s", rom_name,
        CardROM ? ", MPEG card ROM in the card slot" : "");
    return true;
 }

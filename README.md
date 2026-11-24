@@ -23,7 +23,8 @@ The [CD-block SH-1 demo](https://github.com/LysergicWarp/Sega-Saturn-CDblock-SH1
 
 To run this core, the "system directory" must be defined if running in RetroArch.
 The Saturn BIOS must be placed there, $sysdir/{sega_101,mpr-17933}.bin for Japanese, NA and EU regions respectively.
-The CD-block emulator needs the CD-block ROM there too, $sysdir/cdblock.bin, and the card ROM as $sysdir/mpeg_card.bin when the card is enabled.
+The CD-block emulator needs the CD-block ROM there too, and the card ROM as $sysdir/mpeg_card.bin when the card is enabled.
+The core loads the first CD-block ROM it finds of $sysdir/{cdblock,ygr022,cdb106,cdb105,cdb104}.bin, and runs Beetle's own CD block when there is none.
 
 ## Loading ISOs
 
