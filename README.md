@@ -54,7 +54,10 @@ Save as foo.m3u and use this file in place of each disk's individual cue sheet.
 - mpr-17933.bin (3240872c70984b6cbfda1586cab68dbe)
 - mpr-18811-mx.ic1 (255113ba943c92a54facd25a10fd780c)
 - mpr-19367-mx.ic1 (1cd19988d1d72a3e7caa0b73234c96b4)
-- cdblock.bin (21cc63ac18d7a85420c24de5c7d51321), the CD-block ROM, revision CDB105, for the CD-block emulator
+- cdb104.bin (deac6b0785647f53aa09f1e2e07a450a)
+- cdb105.bin (21cc63ac18d7a85420c24de5c7d51321)
+- cdb106.bin (2eaec1ef88f3596c2cb56190a49dfe25)
+- ygr022.bin (1f4ccf420e2189207bf018f2f5369c44)
 
 ## Options
 
