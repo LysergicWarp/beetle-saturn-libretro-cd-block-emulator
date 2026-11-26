@@ -681,7 +681,6 @@ bool CDBLLE_Init(void)
    }
 
    memset(&options, 0, sizeof(options));
-   options.size = sizeof(options);
    options.flags = CDBLOCK_DEVICE_TIMING | CDBLOCK_CLOCK;
    options.card_rom = CardROM;
    options.card_rom_size = CardROMSize;
