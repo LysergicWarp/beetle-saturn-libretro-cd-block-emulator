@@ -110,7 +110,7 @@ static int32_t BatchSH2 = 5865; /* SH-2 cycles in a batch, rounded up */
 static int32_t LastTS;
 static uint64_t Fraction; /* the SH-1 cycle's fraction not run yet, low 32 bits */
 static uint64_t Owed;     /* SH-1 cycles not run yet */
-static uint64_t Ahead;    /* SH-1 cycles the data port ran ahead, not paid back yet */
+static uint64_t Ahead;    /* SH-1 cycles run ahead of the host's time, not paid back yet */
 
 /* Host side of the interface chip */
 static uint16_t CR[4]; /* CR1..CR3 as written, sent with CR4 */
@@ -279,7 +279,7 @@ static void CatchUp(void)
       return;
    }
 
-   /* One instruction is one cycle of the board's clock. A SLEEP lets the
+   /* The board runs its instructions for the cycles owed. A SLEEP lets the
     * clock run to its next event. */
    if(!Ran)
    {
@@ -292,7 +292,7 @@ static void CatchUp(void)
    Owed = 0;
    for(now = cdblock_clock_cycles(Board); now < end; now = cdblock_clock_cycles(Board))
    {
-      const int reason = cdblock_run(Board, end - now, NULL);
+      const int reason = cdblock_run_cycles(Board, end - now, NULL);
 
       if(reason == CDBLOCK_EXIT_ERROR)
       {
@@ -313,6 +313,9 @@ static void CatchUp(void)
          }
       }
    }
+   /* The last instruction ends past the cycles owed. The host time after it
+    * pays that back. */
+   Ahead += now - end;
 
    ProcessLog();
    RecalcIRQ();
